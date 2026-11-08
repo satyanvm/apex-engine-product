@@ -637,10 +637,26 @@ export async function syncScheduledRuns(workspaceId: string): Promise<void> {
   }
 }
 
+const OPEN_RUN_REFRESH_LIMIT = 30;
+
+/** Updates this workspace's unfinished runs, so lists do not need the run opened first. */
+export async function refreshOpenRuns(workspaceId: string): Promise<void> {
+  const { rows } = await query<{ engine_run_id: string }>(
+    `SELECT engine_run_id FROM runs
+      WHERE workspace_id = $1 AND finished_at IS NULL
+      ORDER BY created_at DESC LIMIT $2`,
+    [workspaceId, OPEN_RUN_REFRESH_LIMIT],
+  );
+  const engine = getEngine();
+  const runs = await Promise.all(rows.map((r) => engine.getRun(r.engine_run_id)));
+  await Promise.all(runs.map((run) => recordRunState(workspaceId, run)));
+}
+
 /** Sync for page loads: an engine outage must not take the page down with it. */
 export async function trySyncScheduledRuns(workspaceId: string): Promise<string | null> {
   try {
     await syncScheduledRuns(workspaceId);
+    await refreshOpenRuns(workspaceId);
     return null;
   } catch (err) {
     if (err instanceof EngineError) return err.message;

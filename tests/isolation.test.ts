@@ -88,6 +88,22 @@ describe("workspace isolation", () => {
     expect((await call(getRun, { method: "GET", cookie: alice, params })).status).toBe(200);
   });
 
+  it("refreshes open runs on the list, only for the caller's workspace", async () => {
+    engine.override((c, res) => {
+      if (c.method !== "GET" || !c.path.startsWith("/v1/runs/")) return false;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ id: runId, status: "succeeded", createdAt: "2026-01-01T00:00:00Z", finishedAt: "2026-01-01T00:01:00Z", error: null, input: {}, nodes: [] }));
+      return true;
+    });
+    await call(getRuns, { method: "GET", cookie: bob });
+    expect(engine.calls.filter((c) => c.path.startsWith("/v1/runs/"))).toEqual([]);
+    const { runs } = await (await call(getRuns, { method: "GET", cookie: alice })).json();
+    expect(runs[0].status).toBe("succeeded");
+    engine.calls.length = 0;
+    await call(getRuns, { method: "GET", cookie: alice });
+    expect(engine.calls.filter((c) => c.path.startsWith("/v1/runs/"))).toEqual([]);
+  });
+
   it("never proxies another workspace's tool to the engine", async () => {
     const params = { id: toolId };
     expect((await call(getToolById, { method: "GET", cookie: bob, params })).status).toBe(404);

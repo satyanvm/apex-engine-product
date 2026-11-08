@@ -1,0 +1,38 @@
+# Apex Flows + Postgres. The engine runs separately; point ENGINE_URL at it.
+#
+#   POSTGRES_PASSWORD=... ENGINE_URL=... ENGINE_API_KEY=... APP_URL=... docker compose up -d --build
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: apex
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: apex_flows
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apex -d apex_flows"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  product:
+    build: .
+    environment:
+      DATABASE_URL: postgres://apex:${POSTGRES_PASSWORD}@postgres:5432/apex_flows
+      ENGINE_URL: ${ENGINE_URL:?set ENGINE_URL}
+      ENGINE_API_KEY: ${ENGINE_API_KEY:?set ENGINE_API_KEY}
+      APP_URL: ${APP_URL:?set APP_URL}
+      MONTHLY_COMPILE_LIMIT: ${MONTHLY_COMPILE_LIMIT:-100}
+      MONTHLY_RUN_LIMIT: ${MONTHLY_RUN_LIMIT:-500}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports:
+      - "${PORT:-3100}:3100"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
